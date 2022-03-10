@@ -15,8 +15,8 @@
 
 from random import randint
 from pandas import NaT
-from scapy.all import sniff, send
-from scapy.layers.inet import TCP, IP
+from scapy.all import sniff, sendp, send
+from scapy.layers.inet import TCP, IP, Ether
 from dataclasses import dataclass
 import ipaddress
 import random
@@ -73,7 +73,7 @@ class NatTable:
 class NatEngine:
 
     __private_net: ipaddress.IPv4Interface
-    _ephemeral_port_range = range(10000, 65535)
+    _ephemeral_port_range = range(32768, 60999)
 
     _used_ports = set()
 
@@ -137,41 +137,62 @@ class NatEngine:
 
 
     def process_outgoing_packet(self, packet, src_inside: IpAndPort, dst: IpAndPort):
+        print(f"O Out: {packet.summary()}")
+
         nat_entry = self._nat_table.get_entry_by_inside_ip_and_port(src_inside)
 
         if nat_entry == None:
-            print("Outgoing: new srouce ip and port, need new snat flow")
             outside_port = self.get_ephemeral_port()
             src_outside = IpAndPort(self._outside_ip, outside_port)
             nat_entry = NatEntry(src_inside, src_outside, dst)
-
             self._nat_table.add_entry(nat_entry)
-
-        else:
-            print("Outgoing: existing flow")
+       
             
-        ip_packet: IP = packet.getlayer(IP)
-        ip_packet.src = nat_entry.source_outside.ip
+        new_ip_packet=IP(
+            src=str(nat_entry.source_outside.ip),
+            dst=packet[IP].dst,
+            ttl=packet[IP].ttl) / packet[TCP]
 
-        tcp_packet: TCP = packet.getlayer(TCP)
-        tcp_packet.sport = nat_entry.source_outside.port
+        new_ip_packet[TCP].sport = nat_entry.source_outside.port
 
-        print(tcp_packet.sport)
-
+        new_ip_packet[TCP].chksum = None
 
 
-    def process_incomming_packet(self, packet, inside, outside):
-        print(f"Incoming Packet = Inside: {inside}, Outside {outside}")
+        print(f"N Out: {new_ip_packet.summary()}")
+
+        send(new_ip_packet)
+
+
+
+    def process_incomming_packet(self, packet, local_outside, remote):
+        nat_entry = self._nat_table.get_entry_by_outside_ip_and_port(local_outside)
+
+        if nat_entry != None:    
+            print(f"O In: {packet.summary()}")
+
+            new_ip_packet=IP(
+                src=packet[IP].src,
+                dst=str(nat_entry.source_inside.ip),
+                ttl=packet[IP].ttl) / packet[TCP]
+
+            new_ip_packet[TCP].dport = nat_entry.source_inside.port
+
+            new_ip_packet[TCP].chksum = None
+
+            print(f"N In: {new_ip_packet.summary()}")
+
+            send(new_ip_packet)
 
 
     def packet_handler(self, packet):
-        key = tuple(sorted([packet[0][1].src, packet[0][1].dst]))
         if (packet.haslayer(IP)):
             self.process_ip_packet(packet)
 
     def start(self):
         print(f"private network: {self.__private_net}")
-        sniff(iface="eth0", filter="port 80", prn=self.packet_handler)
+        sniff(iface="eth0", 
+              filter="not src host 172.16.103.129", 
+              prn=self.packet_handler)
 
 
 nat = NatEngine("172.16.103.0/24", "172.16.103.129")
