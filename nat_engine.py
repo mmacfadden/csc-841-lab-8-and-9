@@ -4,27 +4,39 @@ from ip_and_port import IpAndPort
 from nat_table import NatTable, NatEntry
 from scapy.all import sniff, send
 import random
+import netifaces
+from threading import Thread
 
 class NatEngine:
 
-    __private_net: IPv4Interface
-    _ephemeral_port_range = range(32768, 60999)
-
-    _used_ports = set()
-
+    _outside_iface: str
+    _outside_ip: IPv4Interface
     _outside_ip: IPv4Address
+
+    _inside_iface: str
+    _inside_net: IPv4Interface
+    _inside_ip: IPv4Address
 
     _nat_table: NatTable
 
+    _ephemeral_port_range = range(32768, 60999)
+    _used_ports = set()
+
     def __init__(self, 
-        private_network: str,
-        outside_ip: str) -> None:
+        inside_interface_name: str,
+        outside_interface_name: str) -> None:
 
         self._nat_table = NatTable()
-
-        self._outside_ip = IPv4Address(outside_ip)
-        self.__private_net = ip_network(private_network)
-
+        
+        self._inside_iface = inside_interface_name
+        inside_iface = netifaces.ifaddresses(inside_interface_name)[netifaces.AF_INET][0]
+        self._inside_ip = IPv4Address(inside_iface['addr'])
+        self._inside_net = ip_network(f"{self._inside_ip}/{inside_iface['netmask']}", strict=False)
+        
+        self._outside_iface = outside_interface_name
+        outside_iface = netifaces.ifaddresses(outside_interface_name)[netifaces.AF_INET][0]
+        self._outside_ip = IPv4Address(outside_iface['addr'])
+        self._outside_net = ip_network(f"{self._outside_ip}/{outside_iface['netmask']}", strict=False)   
 
     def __get_inside_and_outside_pair(self, addr1, addr2):
         if (addr1.ip in self.__private_net):
@@ -46,34 +58,18 @@ class NatEngine:
         
         self._used_ports.add(port)
 
-        return port
-
-    def process_ip_packet(self, packet):
-        ip_packet: IP = packet.getlayer(IP)
-        
-        if (packet.haslayer(TCP)):
-            tcp_packet: TCP = packet.getlayer(TCP)
-            
-            src_addr = IpAndPort(
-                IPv4Address(ip_packet.src), 
-                tcp_packet.sport)
-
-            dest_addr = IpAndPort(
-                IPv4Address(ip_packet.dst),
-                tcp_packet.dport)
-            
-            (inside, outside) = self.__get_inside_and_outside_pair(src_addr, dest_addr)
-
-            if (src_addr == inside):
-                self.process_outgoing_packet( packet, inside, outside)            
-            else:
-                self.process_incomming_packet( packet, inside, outside)            
+        return port          
             
 
+    def _handle_inside_packet(self, packet):
+        if not packet.haslayer(IP) or not packet.haslayer(TCP):
+            return
 
-    def process_outgoing_packet(self, packet, src_inside: IpAndPort, dst: IpAndPort):
-        print(f"O Out: {packet.summary()}")
+        print(f"O Inside Packet: {packet.summary()}")
 
+        src_inside = IpAndPort(IPv4Address(packet[IP].src), packet[TCP].sport)
+        dst = IpAndPort(IPv4Address(packet[IP].dst),packet[TCP].dport)
+            
         nat_entry = self._nat_table.get_entry_by_inside_ip_and_port(src_inside)
 
         if nat_entry == None:
@@ -93,17 +89,22 @@ class NatEngine:
         new_ip_packet[TCP].chksum = None
 
 
-        print(f"N Out: {new_ip_packet.summary()}")
+        print(f"N Inside Packet: {new_ip_packet.summary()}")
 
-        send(new_ip_packet)
+        send(new_ip_packet, verbose=False)
 
 
 
-    def process_incomming_packet(self, packet, local_outside, remote):
+    def _handle_outside_packet(self, packet):
+        if not packet.haslayer(IP) or not packet.haslayer(TCP):
+            return
+
+        local_outside = IpAndPort(IPv4Address(packet[IP].dst),packet[TCP].dport)
+          
         nat_entry = self._nat_table.get_entry_by_outside_ip_and_port(local_outside)
 
         if nat_entry != None:    
-            print(f"O In: {packet.summary()}")
+            print(f"O Outside Packet: {packet.summary()}")
 
             new_ip_packet=IP(
                 src=packet[IP].src,
@@ -114,17 +115,44 @@ class NatEngine:
 
             new_ip_packet[TCP].chksum = None
 
-            print(f"N In: {new_ip_packet.summary()}")
+            print(f"N Outside Packet: {new_ip_packet.summary()}")
 
-            send(new_ip_packet)
-
-
-    def packet_handler(self, packet):
-        if (packet.haslayer(IP)):
-            self.process_ip_packet(packet)
+            send(new_ip_packet, verbose=False)
+    
 
     def start(self):
-        print(f"private network: {self.__private_net}")
-        sniff(iface="eth0", 
-              filter="not src host 172.16.103.129", 
-              prn=self.packet_handler)
+        print(f"Outside Iface:   {self._outside_iface}")
+        print(f"Outside IP:      {self._outside_ip}")
+        print(f"Outside Network: {self._outside_net}")
+
+        print(f"Inside Iface:    {self._inside_iface}")
+        print(f"Inside IP:       {self._inside_ip}")
+        print(f"Inside Network:  {self._inside_net}")
+        
+        outside_sniffer = Sniffer(
+            self._outside_iface, 
+            self._outside_ip, 
+            self._handle_outside_packet)
+        outside_sniffer.start()
+
+        inside_sniffer = Sniffer(
+            self._inside_iface, 
+            self._inside_ip, 
+            self._handle_inside_packet)
+        inside_sniffer.start()
+
+       
+
+
+class Sniffer(Thread):
+    def  __init__(self, interface, ip, prn):
+        super().__init__()
+
+        self.interface = interface
+        self.ip = ip
+        self.prn = prn
+
+    def run(self):
+        sniff(iface=self.interface, 
+              filter=f"not src host {self.ip}", 
+              prn=self.prn)

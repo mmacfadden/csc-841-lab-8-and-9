@@ -14,7 +14,20 @@
 ###############################################################################
 
 from nat_engine import NatEngine
+import os
+import netifaces
 
-nat = NatEngine("172.16.103.0/24", "172.16.103.129")
+outside_interface = "eth0"
+inside_interface = "eth1"
 
+interfaces = netifaces.interfaces()
+
+if not outside_interface in interfaces:
+    raise Exception("bad outside interface")
+
+if not inside_interface in interfaces:
+    raise Exception("bad inside interface")
+
+
+nat = NatEngine(inside_interface, outside_interface)
 nat.start()
