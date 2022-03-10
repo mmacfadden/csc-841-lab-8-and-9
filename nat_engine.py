@@ -1,83 +1,18 @@
-#!/usr/bin/env python3
- 
-###############################################################################
-# (c) Michael MacFadden
-#
-# CSC-841 Cyber Operations II
-# Lab 09 and 09
-#
-# 
-# Developed With:
-#   Python: 3.9.1
-#   Scapy:  2.4.4
-#
-###############################################################################
-
-from random import randint
-from pandas import NaT
-from scapy.all import sniff, sendp, send
-from scapy.layers.inet import TCP, IP, Ether
-from dataclasses import dataclass
-import ipaddress
+from scapy.layers.inet import TCP, IP
+from ipaddress import IPv4Interface, IPv4Address, ip_network
+from ip_and_port import IpAndPort
+from nat_table import NatTable, NatEntry
+from scapy.all import sniff, send
 import random
-
-
-@dataclass(eq=True, frozen=True)
-class IpAndPort:
-    ip: ipaddress.IPv4Address
-    port: int
-
-@dataclass(eq=True, frozen=True)
-class NatEntry:
-    source_inside: IpAndPort
-    source_outside: IpAndPort
-    dest_outside: IpAndPort
-
-
-class NatTable:
-    
-    inside_map: dict[IpAndPort, NatEntry] = {}
-    outside_map: dict[IpAndPort, NatEntry] = {}
-
-    def has_inside_ip_and_port(self, ip_and_port: IpAndPort) -> bool:
-        return ip_and_port in self.inside_map
-
-    def has_outside_ip_and_port(self, ip_and_port: IpAndPort) -> bool:
-        return ip_and_port in self.outside_map
-
-    def add_entry(self, entry: NatEntry) -> None:
-        self.inside_map[entry.source_inside] = entry
-        self.outside_map[entry.source_outside] = entry
-
-    def get_entry_by_inside_ip_and_port(self, ip_and_port) -> NatEntry:
-        return self.inside_map.get(ip_and_port)
-
-    def get_entry_by_outside_ip_and_port(self, ip_and_port) -> NatEntry:
-        return self.outside_map.get(ip_and_port)
-
-    def remove_by_inside_ip_and_port(self, ip_and_port: IpAndPort) -> None:
-        entry = self.get_entry_by_inside_ip_and_port(ip_and_port)
-        self._remove_entry(entry)
-
-    def remove_by_outside_ip_and_port(self, ip_and_port: IpAndPort) -> None:
-        entry = self.get_entry_by_outside_ip_and_port(ip_and_port)
-        self._remove_entry(entry)
-
-    def _remove_entry(self, entry: NatEntry) -> None:
-        del self.inside_map[entry.source_inside]
-        del self.outside_map[entry.source_outside]
-
-
-
 
 class NatEngine:
 
-    __private_net: ipaddress.IPv4Interface
+    __private_net: IPv4Interface
     _ephemeral_port_range = range(32768, 60999)
 
     _used_ports = set()
 
-    _outside_ip: ipaddress.IPv4Address
+    _outside_ip: IPv4Address
 
     _nat_table: NatTable
 
@@ -87,8 +22,8 @@ class NatEngine:
 
         self._nat_table = NatTable()
 
-        self._outside_ip = ipaddress.IPv4Address(outside_ip)
-        self.__private_net = ipaddress.ip_network(private_network)
+        self._outside_ip = IPv4Address(outside_ip)
+        self.__private_net = ip_network(private_network)
 
 
     def __get_inside_and_outside_pair(self, addr1, addr2):
@@ -120,11 +55,11 @@ class NatEngine:
             tcp_packet: TCP = packet.getlayer(TCP)
             
             src_addr = IpAndPort(
-                ipaddress.IPv4Address(ip_packet.src), 
+                IPv4Address(ip_packet.src), 
                 tcp_packet.sport)
 
             dest_addr = IpAndPort(
-                ipaddress.IPv4Address(ip_packet.dst),
+                IPv4Address(ip_packet.dst),
                 tcp_packet.dport)
             
             (inside, outside) = self.__get_inside_and_outside_pair(src_addr, dest_addr)
@@ -193,8 +128,3 @@ class NatEngine:
         sniff(iface="eth0", 
               filter="not src host 172.16.103.129", 
               prn=self.packet_handler)
-
-
-nat = NatEngine("172.16.103.0/24", "172.16.103.129")
-
-nat.start()
