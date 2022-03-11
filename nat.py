@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
  
 ###############################################################################
-# (c) Michael MacFadden
+# (c) 2022 Michael MacFadden
 #
 # CSC-841 Cyber Operations II
-# Lab 09 and 09
-#
-# 
-# Developed With:
-#   Python: 3.9.1
-#   Scapy:  2.4.4
-#
+# Lab 08 and 09
 ###############################################################################
 
 from nat_engine import NatEngine

@@ -1,8 +1,17 @@
+###############################################################################
+# (c) 2022 Michael MacFadden
+#
+# CSC-841 Cyber Operations II
+# Lab 08 and 09
+###############################################################################
+
 from ip_and_port import IpAndPort
 from dataclasses import dataclass
 
 @dataclass(eq=True, frozen=True)
 class NatEntry:
+    """Represents a single entry in the NatTabe
+    """
     source_inside: IpAndPort
     source_outside: IpAndPort
     dest_outside: IpAndPort

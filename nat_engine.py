@@ -1,3 +1,10 @@
+###############################################################################
+# (c) 2022 Michael MacFadden
+#
+# CSC-841 Cyber Operations II
+# Lab 08 and 09
+###############################################################################
+
 from scapy.layers.inet import TCP, IP
 from ipaddress import IPv4Interface, IPv4Address, ip_network
 from ip_and_port import IpAndPort
