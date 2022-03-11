@@ -17,8 +17,9 @@ from nat_engine import NatEngine
 import os
 import netifaces
 
-outside_interface = "eth0"
-inside_interface = "eth1"
+inside_interface = "eth2"
+outside_interface = "eth1"
+
 
 interfaces = netifaces.interfaces()
 
@@ -29,5 +30,5 @@ if not inside_interface in interfaces:
     raise Exception("bad inside interface")
 
 
-nat = NatEngine(inside_interface, outside_interface)
+nat = NatEngine(inside_interface, outside_interface, False)
 nat.start()
