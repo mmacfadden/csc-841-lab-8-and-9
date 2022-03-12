@@ -157,6 +157,9 @@ class NatEngine:
         inside_sniffer.start()
 
         print("Nat Engine Started\n")
+        print("Press CTRL-C to quit.")
+
+        inside_sniffer.join()
 
        
 class FilteredPacketSniffterThread(Thread):
@@ -166,6 +169,7 @@ class FilteredPacketSniffterThread(Thread):
         self.interface = interface
         self.mac = mac
         self.prn = prn
+        self.setDaemon(True)
 
     def run(self):
         sniff(iface=self.interface, 

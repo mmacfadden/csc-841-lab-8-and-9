@@ -9,8 +9,27 @@ This project was developed with the following dependencies:
 * Scapy:  2.4.4
 
 ## Usage
+To run the server use the `nat.py` script.  Make sure it is executable and that you have the python3 binary on your path. You must specifcy the inside and outside network interfaces to use.  An example command might look like this:
 
-TBD
+```shell
+nat.py eth1 eth2
+```
+
+You can see all help options by using "nat.py -h".  The output is below:
+
+```shell
+usage: nat.py [-h] [-v] inside outside
+
+A simple NAT Server.
+
+positional arguments:
+  inside         The interface name of the inside netwrok interface
+  outside        The interface name of the outside netwrok interface
+
+optional arguments:
+  -h, --help     show this help message and exit
+  -v, --verbose  Print additional information
+```
 
 ## Linux TCP Stack Configuration
 The Linux kernel runs the TCP stack. When it recieves packets on the network it will check to see if the related port is open, by the kernel.  If it is not it will reply with a TCP RST packet.
