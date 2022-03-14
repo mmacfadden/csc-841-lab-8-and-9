@@ -54,5 +54,5 @@ signal.signal(signal.SIGINT, interrupt_handler)
 
 
 # Start the Nat Server. This will block.
-nat = NatEngine(inside_interface, outside_interface, False)
+nat = NatEngine(inside_interface, outside_interface, args.verbose)
 nat.start()

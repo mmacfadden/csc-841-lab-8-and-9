@@ -8,11 +8,21 @@
 from scapy.layers.inet import TCP, IP
 from ipaddress import IPv4Interface, IPv4Address, ip_network
 from ip_and_port import IpAndPort
-from nat_table import NatTable, NatEntry
+from nat_table import NatTable, NatEntry, TcpSession
 from scapy.all import sniff, send
 import random
 import netifaces
-from threading import Thread
+from threading import Thread, Lock
+import time
+
+FIN = 0x01
+SYN = 0x02
+RST = 0x04
+PSH = 0x08
+ACK = 0x10
+URG = 0x20
+ECE = 0x40
+CWR = 0x80
 
 class NatEngine:
 
@@ -27,6 +37,7 @@ class NatEngine:
     _inside_mac: str
 
     _nat_table: NatTable
+    _nat_table_lock: Lock = Lock()
 
     _ephemeral_port_range = range(32768, 60999)
     _used_ports = set()
@@ -84,9 +95,22 @@ class NatEngine:
         if nat_entry == None:
             outside_port = self.get_ephemeral_port()
             src_outside = IpAndPort(self._outside_ip, outside_port)
-            nat_entry = NatEntry(src_inside, src_outside, dst)
+     
+            nat_entry = NatEntry(
+                src_inside, src_outside, dst, time.monotonic(), TcpSession())
+
             self._nat_table.add_entry(nat_entry)
-       
+        else:
+            seq = packet[TCP].seq
+            if nat_entry.tcp_session_state.outside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & ACK:
+                nat_entry.tcp_session_state.outside_fin_acked = True
+                if self._verbose:
+                    print (f"Outside TCP FIN ACK sent.")
+
+            if packet[TCP].flags & FIN:
+                nat_entry.tcp_session_state.inside_fin_seq_no = seq
+                if self._verbose:
+                    print (f"Inside TCP FIN sent with seq {packet[TCP].seq}")
             
         new_ip_packet=IP(
             src=str(nat_entry.source_outside.ip),
@@ -102,6 +126,7 @@ class NatEngine:
 
         send(new_ip_packet, verbose=False)
 
+        self._handle_tcp_session_state(nat_entry)
 
 
     def _handle_outside_packet(self, packet):
@@ -113,8 +138,20 @@ class NatEngine:
         nat_entry = self._nat_table.get_entry_by_outside_ip_and_port(local_outside)
 
         if nat_entry != None: 
+            seq = packet[TCP].seq
+
             if self._verbose:   
                 print(f"Rx Outside Packet: {packet.summary()}")
+
+            if nat_entry.tcp_session_state.inside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & ACK:
+                nat_entry.tcp_session_state.inside_fin_acked = True
+                if self._verbose:
+                    print (f"Inside TCP FIN ACK received.")
+            
+            if packet[TCP].flags & FIN:
+                nat_entry.tcp_session_state.outside_fin_seq_no = seq
+                if self._verbose:
+                    print (f"Outside TCP FIN received with seq {packet[TCP].seq}")
 
             new_ip_packet=IP(
                 src=packet[IP].src,
@@ -129,9 +166,20 @@ class NatEngine:
                 print(f"Tx Outside Packet: {new_ip_packet.summary()}")
 
             send(new_ip_packet, verbose=False)
+
+            self._handle_tcp_session_state(nat_entry)
         else:
             print(f"Er Outside Packet: {packet.summary()}")
     
+
+    def _handle_tcp_session_state(self, entry: NatEntry) -> None:
+        if entry.tcp_session_state.inside_fin_acked and entry.tcp_session_state.outside_fin_acked:
+            with self._nat_table_lock:
+                if self._nat_table.has_entry(entry):
+                    if self._verbose:
+                        print("TCP close completed, removing NAT mapping")
+                    self._nat_table.remove_entry(entry)
+        
 
     def start(self):
         print("Nat Engine Starting\n")
