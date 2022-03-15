@@ -1,7 +1,20 @@
 # DSU CSC-841 Lab 08 ad 09
 This project contains my implementation of Lab 8 and 9 for Dakota State University CSC-841 Cyber Operations II for the Spring 2022 Semester.
 
-The code implements a basic [network address translation](https://en.wikipedia.org/wiki/Network_address_translation)(NAT) server.  The server implments a Symmetric NAT approach for source nat (SNAT).
+## Functionality
+The code implements a basic [network address translation](https://en.wikipedia.org/wiki/Network_address_translation)(NAT) server.  The server implments a Symmetric NAT approach for source nat (SNAT).  The server will bind to two network interfaces. The first is the inside interface which is connected to the private address space.  The second is the outside interface which will connect to the "public" interface.  The entire inside interface is proxied (e.g. all ports), however only TCP traffic is currently supported. The outside and inside interfaces may not be the same.
+
+
+The server has the following functionality:
+* When a packet is received on the inside interface for a new source IP/Port and destination IP/Port pair a new ephemeral port on the outside interface is chosen.
+* The server will then manipulate the packet to use the outside interface's IP and the chosen outside ephemeral port as the source, and then resend the packet on the outside interface.
+* When a packet is received on the outside interface that corresponds to an active ephemral port and is from the correct IP/Port the server will modify the desitation IP/Port of the packet to match the inside host that initiated the exchange.
+* Packets received on the outside interface on a non-active ephemeral port will be dropped.
+* Packets received on the outside interface on an active ephemeral port, but from a different IP/Port than the connection was initiated on will be dropped.
+* When the TCP connection is properly closed (e.g. bidirectional FIN-ACK exchanges), the ephemeral port will be released and the NAT mapping will purged of that flow.
+* The NAT server keeps track of the last time a packet was sent or received via an existing NAT mapping and periodically checks for idle connections that have not been used in a while.  Stale connections will be removed.  Both the idle time and the idle check interval are configurable.
+* The system does a reasonable attempt to validate input arguments to ensure that the specified interfaces exist in the system, and that other settings are sensible.
+
 
 ## Dependencies
 This project was developed with the following dependencies:
@@ -18,17 +31,21 @@ nat.py eth1 eth2
 You can see all help options by using "nat.py -h".  The output is below:
 
 ```shell
-usage: nat.py [-h] [-v] inside outside
+usage: nat.py [-h] [-i seconds] [-c seconds] [-v] inside outside
 
 A simple NAT Server.
 
 positional arguments:
-  inside         The interface name of the inside netwrok interface
-  outside        The interface name of the outside netwrok interface
+  inside                The interface name of the inside netwrok interface
+  outside               The interface name of the outside netwrok interface
 
 optional arguments:
-  -h, --help     show this help message and exit
-  -v, --verbose  Print additional information
+  -h, --help            show this help message and exit
+  -i seconds, --idle-timeout seconds
+                        The number of seconds after which a connection is assumed to have timed out.
+  -c seconds, --idle-check-interval seconds
+                        How often idel connections should be scanned for.
+  -v, --verbose         Print additional information
 ```
 
 ## Linux TCP Stack Configuration
@@ -42,3 +59,6 @@ To account for this we use IPTABLES(8) to drop the RST packets.
 iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 172.16.149.1 -j DROP
 iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 192.168.200.1 -j DROP
 ```
+
+## License
+The code is licensed under the MIT License. The text of the license can be found in the [License](License) file.

@@ -23,9 +23,13 @@ class NatEngine:
     def __init__(self, 
         inside_interface_name: str,
         outside_interface_name: str,
+        idle_timeout_s: int,
+        idle_check_interval_s: int,
         verbose: bool) -> None:
 
         self._verbose = verbose
+        self._idle_timeout_s = idle_timeout_s
+        self._idle_check_interval_s = idle_check_interval_s
 
         self._nat_table = NatTable()
         
@@ -91,6 +95,8 @@ class NatEngine:
                 nat_entry.tcp_session_state.inside_fin_seq_no = seq
                 if self._verbose:
                     print (f"Inside TCP FIN sent with seq {packet[TCP].seq}")
+        
+        nat_entry.last_packet_time = time.monotonic()
             
         new_ip_packet=IP(
             src=str(nat_entry.source_outside.ip),
@@ -113,44 +119,61 @@ class NatEngine:
         if not packet.haslayer(IP) or not packet.haslayer(TCP):
             return
 
-        local_outside = IpAndPort(IPv4Address(packet[IP].dst),packet[TCP].dport)
+        local_outside = IpAndPort(IPv4Address(packet[IP].dst), packet[TCP].dport)
           
         nat_entry = self._nat_table.get_entry_by_outside_ip_and_port(local_outside)
 
-        if nat_entry != None: 
-            seq = packet[TCP].seq
+        if nat_entry != None:
+            from_ip_and_port = IpAndPort(IPv4Address(packet[IP].src), packet[TCP].sport) 
+            correct_rremote_ip_and_port = from_ip_and_port == nat_entry.dest_outside
 
-            if self._verbose:   
-                print(f"Rx Outside Packet: {packet.summary()}")
+            if correct_rremote_ip_and_port:
+                self._handle_valid_outside_packet(packet, nat_entry)
+            else:
+                self._handle_invalid_outside_packet(packet)
 
-            if nat_entry.tcp_session_state.inside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & TcpFlags.ACK:
-                nat_entry.tcp_session_state.inside_fin_acked = True
-                if self._verbose:
-                    print (f"Inside TCP FIN ACK received.")
-            
-            if packet[TCP].flags & TcpFlags.FIN:
-                nat_entry.tcp_session_state.outside_fin_seq_no = seq
-                if self._verbose:
-                    print (f"Outside TCP FIN received with seq {packet[TCP].seq}")
-
-            new_ip_packet=IP(
-                src=packet[IP].src,
-                dst=str(nat_entry.source_inside.ip),
-                ttl=packet[IP].ttl) / packet[TCP]
-
-            new_ip_packet[TCP].dport = nat_entry.source_inside.port
-
-            new_ip_packet[TCP].chksum = None
-
-            if self._verbose:
-                print(f"Tx Outside Packet: {new_ip_packet.summary()}")
-
-            send(new_ip_packet, verbose=False)
-
-            self._handle_tcp_session_state(nat_entry)
         else:
-            print(f"Er Outside Packet: {packet.summary()}")
-    
+            self._handle_invalid_outside_packet(packet)
+
+
+    def _handle_invalid_outside_packet(self, packet) -> None:
+        print(f"Dropped Outside Packet: {packet.summary()}")
+
+
+    def _handle_valid_outside_packet(self, packet, nat_entry: NatEntry) -> None:
+        nat_entry.last_packet_time = time.monotonic()
+
+        seq = packet[TCP].seq
+
+        if self._verbose:   
+            print(f"Rx Outside Packet: {packet.summary()}")
+
+        if nat_entry.tcp_session_state.inside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & TcpFlags.ACK:
+            nat_entry.tcp_session_state.inside_fin_acked = True
+            if self._verbose:
+                print (f"Inside TCP FIN ACK received.")
+        
+        if packet[TCP].flags & TcpFlags.FIN:
+            nat_entry.tcp_session_state.outside_fin_seq_no = seq
+            if self._verbose:
+                print (f"Outside TCP FIN received with seq {packet[TCP].seq}")
+
+        new_ip_packet=IP(
+            src=packet[IP].src,
+            dst=str(nat_entry.source_inside.ip),
+            ttl=packet[IP].ttl) / packet[TCP]
+
+        new_ip_packet[TCP].dport = nat_entry.source_inside.port
+
+        new_ip_packet[TCP].chksum = None
+
+        if self._verbose:
+            print(f"Tx Outside Packet: {new_ip_packet.summary()}")
+
+        send(new_ip_packet, verbose=False)
+
+        self._handle_tcp_session_state(nat_entry)
+
 
     def _handle_tcp_session_state(self, entry: NatEntry) -> None:
         if entry.tcp_session_state.inside_fin_acked and entry.tcp_session_state.outside_fin_acked:
@@ -162,7 +185,7 @@ class NatEngine:
         
 
     def _check_for_timeouts(self):
-        self._nat_table.remove_timed_out_entries()
+        self._nat_table.remove_timed_out_entries(self._idle_timeout_s)
     
         
     def start(self):
@@ -176,7 +199,8 @@ class NatEngine:
         print(f"  Inside IP:       {self._inside_ip}")
         print(f"  Inside Network:  {self._inside_net}\n")
         
-        self._timeout_timer = IntervalTimer("Timeout Timer", self._check_for_timeouts, 5)
+        self._timeout_timer = IntervalTimer(
+            "Timeout Timer", self._check_for_timeouts, self._idle_check_interval_s)
         self._timeout_timer.start()
 
         outside_sniffer = FilteredPacketSniffterThread(

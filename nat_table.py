@@ -5,6 +5,7 @@
 # Lab 08 and 09
 ###############################################################################
 
+import time
 from ip_and_port import IpAndPort
 from dataclasses import dataclass
 from typing import Optional
@@ -66,5 +67,8 @@ class NatTable:
         del self.inside_map[entry.source_inside]
         del self.outside_map[entry.source_outside]
 
-    def remove_timed_out_entries(self) -> None:
-        print("checking for timeout")
+    def remove_timed_out_entries(self, timeout_interval: int) -> None:
+        current_time = time.monotonic()
+        for entry in self.inside_map.values():
+            if (current_time - entry.last_packet_time > timeout_interval):
+                self.remove_entry(entry)         
