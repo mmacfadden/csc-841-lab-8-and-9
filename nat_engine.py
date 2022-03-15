@@ -7,6 +7,7 @@
 
 from scapy.layers.inet import TCP, IP
 from ipaddress import IPv4Interface, IPv4Address, ip_network
+from interval_timer import IntervalTimer
 from ip_and_port import IpAndPort
 from nat_table import NatTable, NatEntry, TcpSession
 from scapy.all import sniff, send
@@ -14,35 +15,10 @@ import random
 import netifaces
 from threading import Thread, Lock
 import time
+from tcp_flags import TcpFlags
 
-FIN = 0x01
-SYN = 0x02
-RST = 0x04
-PSH = 0x08
-ACK = 0x10
-URG = 0x20
-ECE = 0x40
-CWR = 0x80
 
 class NatEngine:
-
-    _outside_iface: str
-    _outside_ip: IPv4Interface
-    _outside_ip: IPv4Address
-    _outside_mac: str
-
-    _inside_iface: str
-    _inside_net: IPv4Interface
-    _inside_ip: IPv4Address
-    _inside_mac: str
-
-    _nat_table: NatTable
-    _nat_table_lock: Lock = Lock()
-
-    _ephemeral_port_range = range(32768, 60999)
-    _used_ports = set()
-
-    _verbose: bool
 
     def __init__(self, 
         inside_interface_name: str,
@@ -64,6 +40,10 @@ class NatEngine:
         self._outside_ip = IPv4Address(outside_iface['addr'])
         self._outside_net = ip_network(f"{self._outside_ip}/{outside_iface['netmask']}", strict=False)   
         self._outside_mac = netifaces.ifaddresses(outside_interface_name)[netifaces.AF_LINK][0]["addr"]
+
+        self._used_ports = set()
+        self._ephemeral_port_range = range(32768, 60999)
+        self._nat_table_lock: Lock = Lock()
 
 
     def get_ephemeral_port(self) -> int:
@@ -102,12 +82,12 @@ class NatEngine:
             self._nat_table.add_entry(nat_entry)
         else:
             seq = packet[TCP].seq
-            if nat_entry.tcp_session_state.outside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & ACK:
+            if nat_entry.tcp_session_state.outside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & TcpFlags.ACK:
                 nat_entry.tcp_session_state.outside_fin_acked = True
                 if self._verbose:
                     print (f"Outside TCP FIN ACK sent.")
 
-            if packet[TCP].flags & FIN:
+            if packet[TCP].flags & TcpFlags.FIN:
                 nat_entry.tcp_session_state.inside_fin_seq_no = seq
                 if self._verbose:
                     print (f"Inside TCP FIN sent with seq {packet[TCP].seq}")
@@ -143,12 +123,12 @@ class NatEngine:
             if self._verbose:   
                 print(f"Rx Outside Packet: {packet.summary()}")
 
-            if nat_entry.tcp_session_state.inside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & ACK:
+            if nat_entry.tcp_session_state.inside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & TcpFlags.ACK:
                 nat_entry.tcp_session_state.inside_fin_acked = True
                 if self._verbose:
                     print (f"Inside TCP FIN ACK received.")
             
-            if packet[TCP].flags & FIN:
+            if packet[TCP].flags & TcpFlags.FIN:
                 nat_entry.tcp_session_state.outside_fin_seq_no = seq
                 if self._verbose:
                     print (f"Outside TCP FIN received with seq {packet[TCP].seq}")
@@ -181,6 +161,10 @@ class NatEngine:
                     self._nat_table.remove_entry(entry)
         
 
+    def _check_for_timeouts(self):
+        self._nat_table.remove_timed_out_entries()
+    
+        
     def start(self):
         print("Nat Engine Starting\n")
 
@@ -192,6 +176,9 @@ class NatEngine:
         print(f"  Inside IP:       {self._inside_ip}")
         print(f"  Inside Network:  {self._inside_net}\n")
         
+        self._timeout_timer = IntervalTimer("Timeout Timer", self._check_for_timeouts, 5)
+        self._timeout_timer.start()
+
         outside_sniffer = FilteredPacketSniffterThread(
             self._outside_iface, 
             self._outside_mac, 

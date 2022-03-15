@@ -30,13 +30,14 @@ class NatEntry:
 
 
 class NatTable:
-    
-    inside_map: dict[IpAndPort, NatEntry] = {}
-    outside_map: dict[IpAndPort, NatEntry] = {}
+
+    def __init__(self) -> None:
+        self.inside_map: dict[IpAndPort, NatEntry] = {}
+        self.outside_map: dict[IpAndPort, NatEntry] = {}
 
     def has_entry(self, entry: NatEntry) -> bool:
         return self.get_entry_by_inside_ip_and_port(entry.source_inside)
-        
+
     def has_inside_ip_and_port(self, ip_and_port: IpAndPort) -> bool:
         return ip_and_port in self.inside_map
 
@@ -64,3 +65,6 @@ class NatTable:
     def remove_entry(self, entry: NatEntry) -> None:
         del self.inside_map[entry.source_inside]
         del self.outside_map[entry.source_outside]
+
+    def remove_timed_out_entries(self) -> None:
+        print("checking for timeout")
