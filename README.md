@@ -56,8 +56,8 @@ Even though we use scapy to sniff the traffic and handle the packet, scapy is ru
 To account for this we use IPTABLES(8) to drop the RST packets.
 
 ```shell
-iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 172.16.149.1 -j DROP
-iptables -A OUTPUT -p tcp --tcp-flags RST RST -s 192.168.200.1 -j DROP
+iptables -A OUTPUT -p tcp --tcp-flags RST RST -s <inside-interface-ip> -j DROP
+iptables -A OUTPUT -p tcp --tcp-flags RST RST -s <outside-intrface-ip> -j DROP
 ```
 
 ## License
