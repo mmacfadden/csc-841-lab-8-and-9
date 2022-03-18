@@ -5,8 +5,8 @@
 # Lab 08 and 09
 ###############################################################################
 
-from scapy.layers.inet import TCP, IP
-from ipaddress import IPv4Interface, IPv4Address, ip_network
+from scapy.layers.inet import TCP, IP, UDP
+from ipaddress import IPv4Address, ip_network
 from interval_timer import IntervalTimer
 from ip_and_port import IpAndPort
 from nat_table import NatTable, NatEntry, TcpSession
@@ -61,18 +61,37 @@ class NatEngine:
         
         self._used_ports.add(port)
 
-        return port          
+        return port    
+
+    def _get_port_from_packet(self, packet, source: bool) -> int:
+        if packet.haslayer(TCP):
+            layer = packet[TCP]
+        elif packet.haslayer(UDP):
+            layer = packet[UDP]
+        else:
+            raise Exception("Only UDP and TCP suppoerted")
+        
+        if source:
+            return layer.sport
+        else:
+            return layer.dport      
             
+    ##
+    ## Inside Packet Handling
+    ##
 
     def _handle_inside_packet(self, packet):
-        if not packet.haslayer(IP) or not packet.haslayer(TCP):
+        if not packet.haslayer(IP):
             return
 
         if self._verbose:
             print(f"Rx Inside Packet: {packet.summary()}")
 
-        src_inside = IpAndPort(IPv4Address(packet[IP].src), packet[TCP].sport)
-        dst = IpAndPort(IPv4Address(packet[IP].dst),packet[TCP].dport)
+        sport = self._get_port_from_packet(packet, True)
+        dport = self._get_port_from_packet(packet, False)
+
+        src_inside = IpAndPort(IPv4Address(packet[IP].src), sport)
+        dst = IpAndPort(IPv4Address(packet[IP].dst), dport)
             
         nat_entry = self._nat_table.get_entry_by_inside_ip_and_port(src_inside)
 
@@ -84,47 +103,78 @@ class NatEngine:
                 src_inside, src_outside, dst, time.monotonic(), TcpSession())
 
             self._nat_table.add_entry(nat_entry)
-        else:
-            seq = packet[TCP].seq
-            if nat_entry.tcp_session_state.outside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & TcpFlags.ACK:
-                nat_entry.tcp_session_state.outside_fin_acked = True
-                if self._verbose:
-                    print (f"Outside TCP FIN ACK sent.")
 
-            if packet[TCP].flags & TcpFlags.FIN:
-                nat_entry.tcp_session_state.inside_fin_seq_no = seq
-                if self._verbose:
-                    print (f"Inside TCP FIN sent with seq {packet[TCP].seq}")
-        
+        payload = self._handle_inside_payload(packet, nat_entry)
+
         nat_entry.last_packet_time = time.monotonic()
             
         new_ip_packet=IP(
             src=str(nat_entry.source_outside.ip),
             dst=packet[IP].dst,
-            ttl=packet[IP].ttl) / packet[TCP]
-
-        new_ip_packet[TCP].sport = nat_entry.source_outside.port
-
-        new_ip_packet[TCP].chksum = None
+            ttl=packet[IP].ttl) / payload       
 
         if self._verbose:
             print(f"Tx Inside Packet: {new_ip_packet.summary()}")
 
         send(new_ip_packet, verbose=False)
 
+
+    def _handle_inside_payload(self, packet: any, nat_entry: NatEntry) -> any:
+        if packet.haslayer(TCP):
+            return self._handle_inside_tcp_payload(packet, nat_entry)
+        elif packet.haslayer(UDP):
+            return self._handle_inside_udp_payload(packet, nat_entry)
+        else:
+            raise Exception("The only protocols supported are TCP/IP and UDP/IP")
+
+
+    def _handle_inside_tcp_payload(self, packet: any, nat_entry: NatEntry) -> any:
+        tcp_layer = packet[TCP].copy()
+        seq = tcp_layer.seq
+
+        if nat_entry.tcp_session_state.outside_fin_seq_no == tcp_layer.ack - 1 and tcp_layer.flags & TcpFlags.ACK:
+            nat_entry.tcp_session_state.outside_fin_acked = True
+            if self._verbose:
+                print (f"Outside TCP FIN ACK sent.")
+
+        if tcp_layer.flags & TcpFlags.FIN:
+            nat_entry.tcp_session_state.inside_fin_seq_no = seq
+            if self._verbose:
+                print (f"Inside TCP FIN sent with seq {seq}")
+    
+        tcp_layer.sport = nat_entry.source_outside.port
+        tcp_layer.chksum = None
+
         self._handle_tcp_session_state(nat_entry)
 
+        return tcp_layer
+    
 
+    def _handle_inside_udp_payload(self, packet: any, nat_entry: NatEntry) -> any:
+        udp_layer = packet[UDP].copy()
+        
+        udp_layer.sport = nat_entry.source_outside.port
+        udp_layer.chksum = None
+    
+        return udp_layer
+
+
+    ##
+    ## Outside Packet Handling
+    ##
     def _handle_outside_packet(self, packet):
-        if not packet.haslayer(IP) or not packet.haslayer(TCP):
+        if not packet.haslayer(IP):
             return
 
-        local_outside = IpAndPort(IPv4Address(packet[IP].dst), packet[TCP].dport)
+        dport = self._get_port_from_packet(packet, False)
+        sport = self._get_port_from_packet(packet, True)
+
+        local_outside = IpAndPort(IPv4Address(packet[IP].dst), dport)
           
         nat_entry = self._nat_table.get_entry_by_outside_ip_and_port(local_outside)
 
         if nat_entry != None:
-            from_ip_and_port = IpAndPort(IPv4Address(packet[IP].src), packet[TCP].sport) 
+            from_ip_and_port = IpAndPort(IPv4Address(packet[IP].src), sport) 
             correct_rremote_ip_and_port = from_ip_and_port == nat_entry.dest_outside
 
             if correct_rremote_ip_and_port:
@@ -141,39 +191,61 @@ class NatEngine:
 
 
     def _handle_valid_outside_packet(self, packet, nat_entry: NatEntry) -> None:
-        nat_entry.last_packet_time = time.monotonic()
-
-        seq = packet[TCP].seq
-
         if self._verbose:   
             print(f"Rx Outside Packet: {packet.summary()}")
 
-        if nat_entry.tcp_session_state.inside_fin_seq_no == packet[TCP].ack - 1 and packet[TCP].flags & TcpFlags.ACK:
-            nat_entry.tcp_session_state.inside_fin_acked = True
-            if self._verbose:
-                print (f"Inside TCP FIN ACK received.")
-        
-        if packet[TCP].flags & TcpFlags.FIN:
-            nat_entry.tcp_session_state.outside_fin_seq_no = seq
-            if self._verbose:
-                print (f"Outside TCP FIN received with seq {packet[TCP].seq}")
+        nat_entry.last_packet_time = time.monotonic()
+
+        payload = self._handle_outside_payload(packet, nat_entry)
 
         new_ip_packet=IP(
             src=packet[IP].src,
             dst=str(nat_entry.source_inside.ip),
-            ttl=packet[IP].ttl) / packet[TCP]
-
-        new_ip_packet[TCP].dport = nat_entry.source_inside.port
-
-        new_ip_packet[TCP].chksum = None
+            ttl=packet[IP].ttl) / payload        
 
         if self._verbose:
             print(f"Tx Outside Packet: {new_ip_packet.summary()}")
 
         send(new_ip_packet, verbose=False)
 
+    def _handle_outside_payload(self, packet: any, nat_entry: NatEntry) -> any:
+        if packet.haslayer(TCP):
+            return self._handle_outside_tcp_payload(packet, nat_entry)
+        elif packet.haslayer(TCP):
+            return self._handle_outside_tcp_payload(packet, nat_entry)
+        else:
+            raise Exception("invalid packet")
+
+
+    def _handle_outside_tcp_payload(self, packet: any, nat_entry: NatEntry) -> any:
+        tcp_layer = packet[TCP].copy()
+        seq = tcp_layer.seq
+
+        if nat_entry.tcp_session_state.inside_fin_seq_no == tcp_layer.ack - 1 and tcp_layer.flags & TcpFlags.ACK:
+            nat_entry.tcp_session_state.inside_fin_acked = True
+            if self._verbose:
+                print (f"Inside TCP FIN ACK received.")
+        
+        if tcp_layer.flags & TcpFlags.FIN:
+            nat_entry.tcp_session_state.outside_fin_seq_no = seq
+            if self._verbose:
+                print (f"Outside TCP FIN received with seq {seq}")
+
         self._handle_tcp_session_state(nat_entry)
 
+        tcp_layer.dport = nat_entry.source_inside.port
+        tcp_layer.chksum = None
+
+        return tcp_layer
+
+
+    def _handle_outside_udp_payload(self, packet: any, nat_entry: NatEntry) -> any:
+        udp_layer = packet[TCP].copy()
+       
+        udp_layer.dport = nat_entry.source_inside.port
+        udp_layer.chksum = None
+
+        return udp_layer
 
     def _handle_tcp_session_state(self, entry: NatEntry) -> None:
         if entry.tcp_session_state.inside_fin_acked and entry.tcp_session_state.outside_fin_acked:
