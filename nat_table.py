@@ -5,6 +5,7 @@
 # Lab 08 and 09
 ###############################################################################
 
+from ipaddress import IPv4Address
 import time
 from ip_and_port import IpAndPort
 from dataclasses import dataclass
@@ -28,6 +29,12 @@ class NatEntry:
 
     last_packet_time: float 
     tcp_session_state: Optional[TcpSession] = None
+
+@dataclass
+class IcmpNatEntry:
+    source: IPv4Address
+    destination: IPv4Address
+    sequence_no: int
 
 
 class NatTable:
@@ -69,6 +76,6 @@ class NatTable:
 
     def remove_timed_out_entries(self, timeout_interval: int) -> None:
         current_time = time.monotonic()
-        for entry in self.inside_map.values():
+        for entry in list(self.inside_map.values()):
             if (current_time - entry.last_packet_time > timeout_interval):
                 self.remove_entry(entry)         

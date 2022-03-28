@@ -211,8 +211,8 @@ class NatEngine:
     def _handle_outside_payload(self, packet: any, nat_entry: NatEntry) -> any:
         if packet.haslayer(TCP):
             return self._handle_outside_tcp_payload(packet, nat_entry)
-        elif packet.haslayer(TCP):
-            return self._handle_outside_tcp_payload(packet, nat_entry)
+        elif packet.haslayer(UDP):
+            return self._handle_outside_udp_payload(packet, nat_entry)
         else:
             raise Exception("invalid packet")
 
@@ -240,7 +240,7 @@ class NatEngine:
 
 
     def _handle_outside_udp_payload(self, packet: any, nat_entry: NatEntry) -> any:
-        udp_layer = packet[TCP].copy()
+        udp_layer = packet[UDP].copy()
        
         udp_layer.dport = nat_entry.source_inside.port
         udp_layer.chksum = None
