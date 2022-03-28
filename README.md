@@ -60,5 +60,11 @@ iptables -A OUTPUT -p tcp --tcp-flags RST RST -s <inside-interface-ip> -j DROP
 iptables -A OUTPUT -p tcp --tcp-flags RST RST -s <outside-intrface-ip> -j DROP
 ```
 
+Similarly, when a UDP packet arrives at the outside interface (on an active flow), the Linux Kernel will reply with an ICPM Destination Unreachable packet. This will cause tools like netcat to assume the connection has been refused.  We can use IPTABLES to block these packets as well:
+
+```shell
+iptables -I OUTPUT -p icmp --icmp-type destination-unreachable -s <outside-intrface-ip> -j DROP
+```
+
 ## License
 The code is licensed under the MIT License. The text of the license can be found in the [License](License) file.
