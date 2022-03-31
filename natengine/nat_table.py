@@ -5,14 +5,14 @@
 # Lab 08 and 09
 ###############################################################################
 
-from ipaddress import IPv4Address
 import time
-from ip_and_port import IpAndPort
 from dataclasses import dataclass
 from typing import Optional
+from .ip_and_port import IpAndPort
 
 @dataclass
 class TcpSession:
+    """A utility class that tracks the state of a TCP Session"""
     inside_fin_seq_no: Optional[int] = None
     inside_fin_acked: bool = False
 
@@ -35,7 +35,11 @@ class NatEntry:
 
 
 class NatTable:
+    """The NatTable class tracks the mapping of port based flows.
 
+    Each flow is characterized by the inside source IP / port and
+    the outside destination ip / port.
+    """
     def __init__(self) -> None:
         self.inside_map: dict[IpAndPort, NatEntry] = {}
         self.outside_map: dict[IpAndPort, NatEntry] = {}

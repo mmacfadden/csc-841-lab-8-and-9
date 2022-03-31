@@ -7,7 +7,7 @@
 # Lab 08 and 09
 ###############################################################################
 
-from nat_engine import NatEngine
+from natengine import NatEngine
 import netifaces
 import argparse
 import signal

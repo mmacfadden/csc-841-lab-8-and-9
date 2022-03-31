@@ -6,19 +6,19 @@
 ###############################################################################
 
 from scapy.layers.inet import TCP, IP, UDP, ICMP, UDPerror, TCPerror, IPerror
-from scapy.packet import Raw
-from ipaddress import IPv4Address, ip_network
-
-from sqlalchemy import false
-from interval_timer import IntervalTimer
-from ip_and_port import IpAndPort
-from nat_table import NatTable, NatEntry, TcpSession
 from scapy.all import sniff, send
 import random
 import netifaces
+from ipaddress import IPv4Address, ip_network
 from threading import Thread, Lock
 import time
-from tcp_flags import TcpFlags
+
+from .interval_timer import IntervalTimer
+from .ip_and_port import IpAndPort
+from .tcp_flags import TcpFlags
+from .nat_table import NatTable, NatEntry, TcpSession
+
+
 
 
 class NatEngine:
