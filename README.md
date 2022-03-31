@@ -34,7 +34,11 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-To run the server use the `nat.py` script.  Make sure it is executable and that you have the python3 binary on your path. You must specifcy the inside and outside network interfaces to use.  An example command might look like this:
+To run the server use the `nat-server.py` script.  Make sure it is executable and that you have the python3 binary on your path. You must specifcy the inside and outside network interfaces to use.  
+
+**Note**: You may neet to run the script as root in order for scapy to monitor your network interfaces.
+
+An example command might look like this:
 
 ```shell
 ./nat-server.py eth1 eth2
