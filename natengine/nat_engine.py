@@ -102,6 +102,7 @@ class NatEngine:
     ##
 
     def _handle_inside_packet(self, packet):
+        """Processes packets coming from the inside interface."""
         if not packet.haslayer(IP):
             return
 
@@ -139,6 +140,7 @@ class NatEngine:
 
 
     def _handle_inside_payload(self, packet: any, nat_entry: NatEntry) -> any:
+        """Processes TCP/UDP payload for an inside packet."""
         if packet.haslayer(TCP):
             return self._handle_inside_tcp_payload(packet, nat_entry)
         elif packet.haslayer(UDP):
@@ -184,6 +186,7 @@ class NatEngine:
     ## Outside Packet Handling
     ##
     def _handle_outside_packet(self, packet):
+        """Processess packets orginating from the outside interface"""
         if not packet.haslayer(IP):
             return
 

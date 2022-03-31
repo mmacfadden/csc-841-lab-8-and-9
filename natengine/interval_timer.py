@@ -10,6 +10,7 @@ from time import sleep
 from collections.abc import Callable
 
 class IntervalTimer(Thread):
+    """A utility class the executes a call back function on a supplied interval."""
     def __init__(self, name: str, callback: Callable[[], None], interval: int):
         Thread.__init__(self, name=name)
         
