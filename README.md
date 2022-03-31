@@ -5,8 +5,8 @@ This project contains my implementation of Lab 8 and 9 for Dakota State Universi
 The code implements a basic [network address translation](https://en.wikipedia.org/wiki/Network_address_translation)(NAT) server.  The server implments a Symmetric NAT approach for source nat (SNAT).  The server will bind to two network interfaces. The first is the inside interface which is connected to the private address space.  The second is the outside interface which will connect to the "public" interface.  The entire inside interface is proxied (e.g. all ports). The outside and inside interfaces may not be the same.
 
 The server has the following functionality:
-- Both TCP and UDP are supported for IPv4.
-- ICMP Destination Unreachable packets for valid TCP / UDP flows are forwarded from the outside interface to the inside interface.
+* Both TCP and UDP are supported for IPv4.
+* ICMP Destination Unreachable packets for valid TCP / UDP flows are forwarded from the outside interface to the inside interface.
 * When a packet is received on the inside interface for a new source IP/Port and destination IP/Port pair a new ephemeral port on the outside interface is chosen.
 * The server will then manipulate the packet to use the outside interface's IP and the chosen outside ephemeral port as the source, and then resend the packet on the outside interface.
 * When a packet is received on the outside interface that corresponds to an active ephemral port and is from the correct IP/Port the server will modify the desitation IP/Port of the packet to match the inside host that initiated the exchange.
@@ -37,7 +37,7 @@ pip install -r requirements.txt
 To run the server use the `nat.py` script.  Make sure it is executable and that you have the python3 binary on your path. You must specifcy the inside and outside network interfaces to use.  An example command might look like this:
 
 ```shell
-nat-server.py eth1 eth2
+./nat-server.py eth1 eth2
 ```
 
 You can see all help options by using "nat-server.py -h".  The output is below:
