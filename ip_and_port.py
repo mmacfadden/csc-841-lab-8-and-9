@@ -15,3 +15,6 @@ class IpAndPort:
     ip: IPv4Address
     
     port: int
+
+    def __str__(self):
+        return str(self.ip) + ":" + str(self.port)

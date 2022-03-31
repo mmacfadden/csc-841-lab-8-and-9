@@ -19,6 +19,9 @@ class TcpSession:
     outside_fin_seq_no: Optional[int] = None
     outside_fin_acked: bool = False
 
+    reset_recieved: bool = False
+
+
 @dataclass
 class NatEntry:
     """Represents a single entry in the NatTabe
@@ -29,12 +32,6 @@ class NatEntry:
 
     last_packet_time: float 
     tcp_session_state: Optional[TcpSession] = None
-
-@dataclass
-class IcmpNatEntry:
-    source: IPv4Address
-    destination: IPv4Address
-    sequence_no: int
 
 
 class NatTable:

@@ -57,7 +57,7 @@ To account for this we use IPTABLES(8) to drop the RST packets.
 
 ```shell
 iptables -A OUTPUT -p tcp --tcp-flags RST RST -s <inside-interface-ip> -j DROP
-iptables -A OUTPUT -p tcp --tcp-flags RST RST -s <outside-intrface-ip> -j DROP
+iptables -A OUTPUT -p tcp --tcp-flags RST RST -s <outside-interface-ip> -j DROP
 ```
 
 Similarly, when a UDP packet arrives at the outside interface (on an active flow), the Linux Kernel will reply with an ICPM Destination Unreachable packet. This will cause tools like netcat to assume the connection has been refused.  We can use IPTABLES to block these packets as well:
